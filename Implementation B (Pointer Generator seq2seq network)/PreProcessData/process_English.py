@@ -17,31 +17,29 @@ def clean_text(text, remove_stopwords = True):
     
     # Convert words to lower case
     text = text.lower()
-    
-    # Replace contractions with their longer forms 
-    if True:
-        text = text.split()
-        new_text = []
-        for word in text:
-            if word in contractions:
-                new_text.append(contractions[word])
-            else:
-                new_text.append(word)
-        text = " ".join(new_text)
-    
+
+    text = text.split()
+    new_text = []
+    for word in text:
+        if word in contractions:
+            new_text.append(contractions[word])
+        else:
+            new_text.append(word)
+    text = " ".join(new_text)
+
     # Format words and remove unwanted characters
     text = re.sub(r'https?:\/\/.*[\r\n]*', '', text, flags=re.MULTILINE)
     text = re.sub(r'\<a href', ' ', text)
-    text = re.sub(r'&amp;', '', text) 
+    text = re.sub(r'&amp;', '', text)
     text = re.sub(r'[_"\-;%()|+&=*%.,!?:#$@\[\]/]', ' ', text)
     text = re.sub(r'<br />', ' ', text)
     text = re.sub(r'\'', ' ', text)
-    
+
     # Optionally, remove stop words
     if remove_stopwords:
         text = text.split()
         stops = set(stopwords.words("english"))
-        text = [w for w in text if not w in stops]
+        text = [w for w in text if w not in stops]
         text = " ".join(text)
 
     return text
@@ -71,44 +69,44 @@ CHUNK_SIZE = 1000 # num examples per chunk, for the chunked data
 
 
 def chunk_file(set_name):
-  in_file = finished_files_dir + '/%s.bin' % set_name
-  reader = open(in_file, "rb")
-  chunk = 0
-  finished = False
-  while not finished:
-    chunk_fname = os.path.join(chunks_dir, '%s_%03d.bin' % (set_name, chunk)) # new chunk
-    with open(chunk_fname, 'wb') as writer:
-      for _ in range(CHUNK_SIZE):
-        len_bytes = reader.read(8)
-        if not len_bytes:
-          finished = True
-          break
-        str_len = struct.unpack('q', len_bytes)[0]
-        example_str = struct.unpack('%ds' % str_len, reader.read(str_len))[0]
-        writer.write(struct.pack('q', str_len))
-        writer.write(struct.pack('%ds' % str_len, example_str))
-      chunk += 1
+    in_file = finished_files_dir + f'/{set_name}.bin'
+    reader = open(in_file, "rb")
+    chunk = 0
+    finished = False
+    while not finished:
+      chunk_fname = os.path.join(chunks_dir, '%s_%03d.bin' % (set_name, chunk)) # new chunk
+      with open(chunk_fname, 'wb') as writer:
+        for _ in range(CHUNK_SIZE):
+          len_bytes = reader.read(8)
+          if not len_bytes:
+            finished = True
+            break
+          str_len = struct.unpack('q', len_bytes)[0]
+          example_str = struct.unpack('%ds' % str_len, reader.read(str_len))[0]
+          writer.write(struct.pack('q', str_len))
+          writer.write(struct.pack('%ds' % str_len, example_str))
+        chunk += 1
 
 
 def chunk_all():
-  # Make a dir to hold the chunks
-  if not os.path.isdir(chunks_dir):
-    os.mkdir(chunks_dir)
-  # Chunk the data
-  for set_name in ['train', 'val', 'test']:
-    print ("Splitting %s data into chunks..." % set_name)
-    chunk_file(set_name)
-  print ("Saved chunked data in %s" % chunks_dir)
+    # Make a dir to hold the chunks
+    if not os.path.isdir(chunks_dir):
+      os.mkdir(chunks_dir)
+      # Chunk the data
+    for set_name in ['train', 'val', 'test']:
+        print(f"Splitting {set_name} data into chunks...")
+        chunk_file(set_name)
+    print(f"Saved chunked data in {chunks_dir}")
 
 
 def tokenize_stories(reviews, tokenized_stories_dir):
-  """Maps a whole directory of .story files to a tokenized version using Stanford CoreNLP Tokenizer"""
-  progress = ProgressBar.ProgressBar(len(reviews), fmt=ProgressBar.ProgressBar.FULL)
+    """Maps a whole directory of .story files to a tokenized version using Stanford CoreNLP Tokenizer"""
+    progress = ProgressBar.ProgressBar(len(reviews), fmt=ProgressBar.ProgressBar.FULL)
 
-  for i, row in reviews.iterrows():
+    for i, row in reviews.iterrows():
         #if i==20:
         #    break
-        filename = str(i) + '.tok'
+        filename = f'{str(i)}.tok'
         with open(os.path.join(tokenized_stories_dir, filename), 'w', encoding="utf-8") as temp_file:
             text = row["content"]
             text = clean_text(text , remove_stopwords = True)
@@ -120,123 +118,126 @@ def tokenize_stories(reviews, tokenized_stories_dir):
             list = tok.copy()
 
             for i in tok:
-                if(i=='``' or i=="''" ):
+                if i in ['``', "''"]:
                     list.remove(i)
             tok_string = "\n".join(str(x) for x in list)
             temp_file.write(tok_string)
 
         progress.current += 1
         progress()
-  print ("Successfully finished tokenizing to %s .\n" % (tokenized_stories_dir))
+    print ("Successfully finished tokenizing to %s .\n" % (tokenized_stories_dir))
 
 
 def fix_missing_period(line):
-  """Adds a period to a line that is missing a period"""
-  if "@highlight" in line: return line
-  if line=="": return line
-  if line[-1] in END_TOKENS: return line
-  # print line[-1]
-  return line + " ."
+    """Adds a period to a line that is missing a period"""
+    if "@highlight" in line: return line
+    if line=="": return line
+    return line if line[-1] in END_TOKENS else line + " ."
 
 def read_text_file(text_file):
-  lines = []
-  with open(text_file, "r", encoding="utf-8") as f:
-    for line in f:
-      lines.append(line.strip())
-  return lines
+    lines = []
+    with open(text_file, "r", encoding="utf-8") as f:
+        lines.extend(line.strip() for line in f)
+    return lines
 
 def get_art_abs(story_file):
-  lines = read_text_file(story_file)
+    lines = read_text_file(story_file)
 
-  # Lowercase everything
-  lines = [line.lower() for line in lines]
+    # Lowercase everything
+    lines = [line.lower() for line in lines]
 
-  # Put periods on the ends of lines that are missing them (this is a problem in the dataset because many image captions don't end in periods; consequently they end up in the body of the article as run-on sentences)
-  lines = [fix_missing_period(line) for line in lines]
+    # Put periods on the ends of lines that are missing them (this is a problem in the dataset because many image captions don't end in periods; consequently they end up in the body of the article as run-on sentences)
+    lines = [fix_missing_period(line) for line in lines]
 
-  # Separate out article and abstract sentences
-  article_lines = []
-  highlights = []
-  next_is_highlight = False
-  for idx,line in enumerate(lines):
-    if line == "":
-      continue # empty line
-    elif line.startswith("@highlight"):
-      next_is_highlight = True
-    elif next_is_highlight:
-      highlights.append(line)
-    else:
-      article_lines.append(line)
+    # Separate out article and abstract sentences
+    article_lines = []
+    highlights = []
+    next_is_highlight = False
+    for line in lines:
+        if line == "":
+          continue # empty line
+        elif line.startswith("@highlight"):
+          next_is_highlight = True
+        elif next_is_highlight:
+          highlights.append(line)
+        else:
+          article_lines.append(line)
 
-  # Make article into a single string
-  article = ' '.join(article_lines)
+    # Make article into a single string
+    article = ' '.join(article_lines)
 
-  # Make abstract into a signle string, putting <s> and </s> tags around the sentences
-  abstract = ' '.join(["%s %s %s" % (SENTENCE_START, sent, SENTENCE_END) for sent in highlights])
+      # Make abstract into a signle string, putting <s> and </s> tags around the sentences
+    abstract = ' '.join(
+        [f"{SENTENCE_START} {sent} {SENTENCE_END}" for sent in highlights]
+    )
 
-  return article, abstract
+    return article, abstract
 
 
 def write_to_bin(file_names, out_file, makevocab=False):
-  """Reads the tokenized .story files corresponding to the urls listed in the url_file and writes them to a out_file."""
+    """Reads the tokenized .story files corresponding to the urls listed in the url_file and writes them to a out_file."""
  
-  story_fnames = [str(s)+".tok" for s in file_names]
-  num_stories = len(story_fnames)
+    story_fnames = [f"{str(s)}.tok" for s in file_names]
+    num_stories = len(story_fnames)
 
-  if makevocab:
-    vocab_counter = collections.Counter()
+    if makevocab:
+      vocab_counter = collections.Counter()
 
-  with open(out_file, 'wb') as writer:
-    for idx,s in enumerate(story_fnames):
-      if idx % 1000 == 0:
-        print( "Writing story %i of %i; %.2f percent done" % (idx, num_stories, float(idx)*100.0/float(num_stories)))
+    with open(out_file, 'wb') as writer:
+        for idx,s in enumerate(story_fnames):
+            if idx % 1000 == 0:
+              print( "Writing story %i of %i; %.2f percent done" % (idx, num_stories, float(idx)*100.0/float(num_stories)))
 
-      # Look in the tokenized story dirs to find the .story file corresponding to this url
-      if os.path.isfile(os.path.join(cnn_tokenized_stories_dir, s)):
-        story_file = os.path.join(cnn_tokenized_stories_dir, s)
-      elif os.path.isfile(os.path.join(dm_tokenized_stories_dir, s)):
-        story_file = os.path.join(dm_tokenized_stories_dir, s)
-      else:
-        print ("Error: Couldn't find tokenized story file %s in either tokenized story directories %s and %s. Was there an error during tokenization?" % (s, cnn_tokenized_stories_dir, dm_tokenized_stories_dir))
-        # Check again if tokenized stories directories contain correct number of files
-        print ("Checking that the tokenized stories directories %s and %s contain correct number of files..." % (cnn_tokenized_stories_dir, dm_tokenized_stories_dir))
-        #check_num_stories(cnn_tokenized_stories_dir, num_expected_cnn_stories)
-        #check_num_stories(dm_tokenized_stories_dir, num_expected_dm_stories)
-        #raise Exception("Tokenized stories directories %s and %s contain correct number of files but story file %s found in neither." % (cnn_tokenized_stories_dir, dm_tokenized_stories_dir, s))
-        
-      # Get the strings to write to .bin file
-      article, abstract = get_art_abs(story_file)
+                  # Look in the tokenized story dirs to find the .story file corresponding to this url
+            if os.path.isfile(os.path.join(cnn_tokenized_stories_dir, s)):
+                story_file = os.path.join(cnn_tokenized_stories_dir, s)
+            elif os.path.isfile(os.path.join(dm_tokenized_stories_dir, s)):
+              story_file = os.path.join(dm_tokenized_stories_dir, s)
+            else:
+                print(
+                    f"Error: Couldn't find tokenized story file {s} in either tokenized story directories {cnn_tokenized_stories_dir} and {dm_tokenized_stories_dir}. Was there an error during tokenization?"
+                )
+                        # Check again if tokenized stories directories contain correct number of files
+                print(
+                    f"Checking that the tokenized stories directories {cnn_tokenized_stories_dir} and {dm_tokenized_stories_dir} contain correct number of files..."
+                )
+                    #check_num_stories(cnn_tokenized_stories_dir, num_expected_cnn_stories)
+                    #check_num_stories(dm_tokenized_stories_dir, num_expected_dm_stories)
+                    #raise Exception("Tokenized stories directories %s and %s contain correct number of files but story file %s found in neither." % (cnn_tokenized_stories_dir, dm_tokenized_stories_dir, s))
 
-      
-      # Write to tf.Example
-      tf_example = example_pb2.Example()
-      tf_example.features.feature['article'].bytes_list.value.extend([article.encode('utf-8')])
-      tf_example.features.feature['abstract'].bytes_list.value.extend([abstract.encode('utf-8')])
-      tf_example_str = tf_example.SerializeToString()
-      str_len = len(tf_example_str)
-      writer.write(struct.pack('q', str_len))
-      writer.write(struct.pack('%ds' % str_len, tf_example_str))
-   
+            # Get the strings to write to .bin file
+            article, abstract = get_art_abs(story_file)
 
-      # Write the vocab to file, if applicable
-      if makevocab:
-        art_tokens = article.split(' ')
-        abs_tokens = abstract.split(' ')
-        abs_tokens = [t for t in abs_tokens if t not in [SENTENCE_START, SENTENCE_END]] # remove these tags from vocab
-        tokens = art_tokens + abs_tokens
-        tokens = [t.strip() for t in tokens] # strip
-        tokens = [t for t in tokens if t!=""] # remove empty
-        vocab_counter.update(tokens)
 
-  print ("Finished writing file %s\n" % out_file)
+            # Write to tf.Example
+            tf_example = example_pb2.Example()
+            tf_example.features.feature['article'].bytes_list.value.extend([article.encode('utf-8')])
+            tf_example.features.feature['abstract'].bytes_list.value.extend([abstract.encode('utf-8')])
+            tf_example_str = tf_example.SerializeToString()
+            str_len = len(tf_example_str)
+            writer.write(struct.pack('q', str_len))
+            writer.write(struct.pack('%ds' % str_len, tf_example_str))
 
-  # write vocab to file
-  if makevocab:
-    print ("Writing vocab file...")
-    with open(os.path.join(finished_files_dir, "vocab"), 'w', encoding="utf-8") as writer:
-      for word, count in vocab_counter.most_common(VOCAB_SIZE):
-        writer.write(word + ' ' + str(count) + '\n')
-    print ("Finished writing vocab file")
+
+            # Write the vocab to file, if applicable
+            if makevocab:
+              art_tokens = article.split(' ')
+              abs_tokens = abstract.split(' ')
+              abs_tokens = [t for t in abs_tokens if t not in [SENTENCE_START, SENTENCE_END]] # remove these tags from vocab
+              tokens = art_tokens + abs_tokens
+              tokens = [t.strip() for t in tokens] # strip
+              tokens = [t for t in tokens if t!=""] # remove empty
+              vocab_counter.update(tokens)
+
+    print ("Finished writing file %s\n" % out_file)
+
+    # write vocab to file
+    if makevocab:
+      print ("Writing vocab file...")
+      with open(os.path.join(finished_files_dir, "vocab"), 'w', encoding="utf-8") as writer:
+        for word, count in vocab_counter.most_common(VOCAB_SIZE):
+          writer.write(word + ' ' + str(count) + '\n')
+      print ("Finished writing vocab file")
 
 
 def check_num_stories(stories_dir, num_expected):
